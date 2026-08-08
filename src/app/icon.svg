@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Simmer">
+  <rect width="64" height="64" rx="14" fill="#3F6B4F"/>
+  <!-- Twee sliertjes stoom in saffraan: het enige accentkleurtje, net als in de app. -->
+  <path d="M25 13c-3.4 3 2.6 5.4-.8 8.4M39 13c-3.4 3 2.6 5.4-.8 8.4"
+        fill="none" stroke="#D9A441" stroke-width="4" stroke-linecap="round"/>
+  <!-- Deksel -->
+  <rect x="11" y="26" width="42" height="6" rx="3" fill="#FFFFFF"/>
+  <!-- Oren -->
+  <rect x="5" y="35" width="10" height="5" rx="2.5" fill="#FFFFFF"/>
+  <rect x="49" y="35" width="10" height="5" rx="2.5" fill="#FFFFFF"/>
+  <!-- Pot -->
+  <path d="M14 34h36v9.5A8.5 8.5 0 0 1 41.5 52h-19A8.5 8.5 0 0 1 14 43.5z" fill="#FFFFFF"/>
+</svg>

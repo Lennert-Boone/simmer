@@ -1,0 +1,160 @@
+@import "tailwindcss";
+
+/* --------------------------------------------------------------------------
+   "Het aanrecht bij daglicht" — fris en licht, maar niet steriel.
+   Saffraan is uitsluitend de highlight voor vanavond, nooit een hoofdkleur.
+   -------------------------------------------------------------------------- */
+@theme {
+  --color-zand: #f6f5f1;
+  --color-kaart: #ffffff;
+  --color-kruid: #3f6b4f;
+  --color-kruid-donker: #2f5240;
+  --color-kruid-licht: #e8eee9;
+  --color-saffraan: #d9a441;
+  --color-saffraan-zacht: #fbf2dd;
+  --color-inkt: #22241f;
+  --color-inkt-zacht: #71756a;
+  --color-lijn: #e5e3db;
+
+  --font-slab: var(--font-zilla), Georgia, "Times New Roman", serif;
+  --font-ui: var(--font-inter), system-ui, -apple-system, sans-serif;
+  --font-cijfer: var(--font-plex-mono), ui-monospace, "SF Mono", monospace;
+
+  --shadow-kaart: 0 1px 2px rgb(34 36 31 / 0.04), 0 6px 16px -8px rgb(34 36 31 / 0.1);
+  --shadow-vanavond: 0 2px 4px rgb(34 36 31 / 0.05), 0 18px 40px -14px rgb(217 164 65 / 0.55);
+}
+
+@layer base {
+  html {
+    background-color: var(--color-zand);
+  }
+
+  body {
+    color: var(--color-inkt);
+    font-family: var(--font-ui);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-slab);
+    letter-spacing: -0.01em;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-kruid);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::placeholder {
+    color: var(--color-inkt-zacht);
+    opacity: 0.75;
+  }
+}
+
+@layer components {
+  .kaart {
+    background-color: var(--color-kaart);
+    border: 1px solid var(--color-lijn);
+    border-radius: 0.875rem;
+    box-shadow: var(--shadow-kaart);
+  }
+
+  /* Het signature-element: alsof er een lamp op de vandaag-kaart schijnt. */
+  .kaart-vanavond {
+    background-color: var(--color-kaart);
+    border: 1px solid color-mix(in srgb, var(--color-saffraan) 45%, var(--color-lijn));
+    border-radius: 1rem;
+    box-shadow: var(--shadow-vanavond);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .kaart-vanavond::before {
+    content: "";
+    position: absolute;
+    inset: -60% 20% auto 20%;
+    height: 130%;
+    background: radial-gradient(
+      ellipse at 50% 0%,
+      color-mix(in srgb, var(--color-saffraan) 22%, transparent),
+      transparent 62%
+    );
+    pointer-events: none;
+  }
+
+  .kaart-rustig {
+    background-color: color-mix(in srgb, var(--color-kaart) 72%, var(--color-zand));
+    border: 1px solid var(--color-lijn);
+    border-radius: 0.875rem;
+  }
+
+  .cijfer {
+    font-family: var(--font-cijfer);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  .knop-primair {
+    background-color: var(--color-kruid);
+    color: #fff;
+    border-radius: 0.625rem;
+    font-weight: 500;
+    transition: background-color 140ms ease;
+  }
+  .knop-primair:hover:not(:disabled) {
+    background-color: var(--color-kruid-donker);
+  }
+  .knop-primair:disabled {
+    opacity: 0.5;
+  }
+
+  .knop-stil {
+    border: 1px solid var(--color-lijn);
+    background-color: var(--color-kaart);
+    border-radius: 0.625rem;
+    transition: border-color 140ms ease;
+  }
+  .knop-stil:hover:not(:disabled) {
+    border-color: var(--color-kruid);
+  }
+
+  .veld {
+    background-color: var(--color-kaart);
+    border: 1px solid var(--color-lijn);
+    border-radius: 0.625rem;
+    padding: 0.5rem 0.75rem;
+  }
+  .veld:focus {
+    outline: 2px solid var(--color-kruid);
+    outline-offset: -1px;
+    border-color: transparent;
+  }
+}
+
+/* Motion blijft beperkt tot de vandaag-kaart en binnenkomende AI-antwoorden. */
+@keyframes opkomen {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animeer-op {
+  animation: opkomen 260ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
