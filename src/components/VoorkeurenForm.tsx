@@ -71,6 +71,26 @@ export default function VoorkeurenForm({
       </div>
 
       <div className="kaart p-5">
+        <label htmlFor="vooruit" className="block text-sm font-medium">
+          Boodschappenlijst loopt vooruit
+        </label>
+        <p className="mt-1 mb-2 text-sm text-inkt-zacht">
+          Doen jullie zaterdag boodschappen voor de week erna? Zet dit dan op één week, dan opent
+          de lijst meteen op de juiste week.
+        </p>
+        <select
+          id="vooruit"
+          name="boodschappen_weken_vooruit"
+          defaultValue={voorkeuren.boodschappen_weken_vooruit}
+          className="veld w-full"
+        >
+          <option value={0}>Niet — de week die nu loopt</option>
+          <option value={1}>Eén week vooruit</option>
+          <option value={2}>Twee weken vooruit</option>
+        </select>
+      </div>
+
+      <div className="kaart p-5">
         <label htmlFor="kookstijl" className="block text-sm font-medium">
           Hoe koken jullie graag?
         </label>

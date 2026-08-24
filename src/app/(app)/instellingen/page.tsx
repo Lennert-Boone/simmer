@@ -1,10 +1,12 @@
 import { redirect } from "next/navigation";
 import { logUit, verwijderLid } from "@/app/actions";
 import AccountForm from "@/components/AccountForm";
+import AiInstellingen from "@/components/AiInstellingen";
 import Avatar from "@/components/Avatar";
 import VoorkeurenForm from "@/components/VoorkeurenForm";
 import { getGezinsContext } from "@/lib/family";
 import { createClient } from "@/lib/supabase/server";
+import { STANDAARD, type Provider } from "@/lib/ai";
 import type { Gezinslid } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +16,15 @@ export default async function InstellingenPagina() {
   if (!context) redirect("/onboarding");
 
   const supabase = await createClient();
+
+  // Alleen de beheerder leest deze rij (RLS); voor anderen blijft hij leeg en
+  // tonen we het AI-blok niet.
+  const { data: aiRij } = await supabase
+    .from("family_ai_config")
+    .select("provider, model, api_key")
+    .eq("family_id", context.gezin.id)
+    .maybeSingle();
+
   const { data: leden } = await supabase
     .from("family_members")
     .select("user_id, role, users(id, email, naam, avatar_url)")
@@ -82,6 +93,17 @@ export default async function InstellingenPagina() {
         <h2 className="mb-3 text-lg">Voorkeuren</h2>
         <VoorkeurenForm voorkeuren={context.voorkeuren} />
       </section>
+
+      {context.rol === "owner" && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-lg">Basiel</h2>
+          <AiInstellingen
+            provider={(aiRij?.provider === "anthropic" ? "anthropic" : "gemini") as Provider}
+            model={aiRij?.model || STANDAARD.gemini}
+            heeftSleutel={Boolean(aiRij?.api_key)}
+          />
+        </section>
+      )}
 
       <form action={logUit}>
         <button type="submit" className="knop-stil px-4 py-2 text-sm">

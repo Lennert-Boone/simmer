@@ -1,10 +1,11 @@
-import { GoogleGenAI, type Content, type FunctionDeclaration } from "@google/genai";
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getGezinsContext } from "@/lib/family";
 import { regenereerBoodschappenlijst } from "@/lib/shopping";
 import { logActiviteit } from "@/lib/activiteit";
 import { getRecipeSuggestions } from "@/lib/recipes";
+import { getAiConfig, type AiConfig } from "@/lib/ai";
+import { isLimietFout, vraagAi, type AiGereedschap } from "@/lib/ai/vraag";
 import { dagNaam, dagenVanWeek, vandaagISO, weekLabel } from "@/lib/week";
 import type { Ingredient, Maaltijdtype, VoorraadItem, WeekmenuEntry } from "@/lib/types";
 
@@ -13,18 +14,13 @@ import type { Ingredient, Maaltijdtype, VoorraadItem, WeekmenuEntry } from "@/li
 // maar ruim is het niet. Zit je op Pro, dan mag hier 300.
 export const maxDuration = 60;
 
-// Flash-modellen zitten in de gratis laag van de Gemini API en kunnen function
-// calling. Let op: gemini-2.5-flash is voor nieuwe sleutels niet meer
-// beschikbaar. Overschrijfbaar via GEMINI_MODEL.
-const MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
-
-const WEEKMENU_TOOL: FunctionDeclaration = {
-  name: "werk_weekmenu_bij",
-  description:
+const WEEKMENU_TOOL: AiGereedschap = {
+  naam: "werk_weekmenu_bij",
+  beschrijving:
     "Zet gerechten in het weekmenu of haal ze eruit. Gebruik dit zodra je een concreet " +
     "voorstel hebt. Vul alleen de dagen in die je nu wilt wijzigen — dagen die je weglaat " +
     "blijven ongemoeid. Roep dit niet aan als je nog een verduidelijkende vraag stelt.",
-  parametersJsonSchema: {
+  schema: {
     type: "object",
     properties: {
       gerechten: {
@@ -93,13 +89,6 @@ interface ToolGerecht {
 }
 
 export async function POST(request: Request) {
-  if (!process.env.GEMINI_API_KEY) {
-    return NextResponse.json(
-      { fout: "GEMINI_API_KEY ontbreekt. Zet die in .env.local en herstart de server." },
-      { status: 500 },
-    );
-  }
-
   const { bericht, weekStart } = (await request.json()) as {
     bericht?: string;
     weekStart?: string;
@@ -164,32 +153,25 @@ export async function POST(request: Request) {
     suggesties: suggesties.map((s) => s.titel),
   });
 
-  const genai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const aiConfig = await getAiConfig(supabase, gezin.id);
 
   let antwoord = "";
   let menuGewijzigd = false;
 
-  const contents = bouwBerichten(geschiedenis ?? []);
-  const basisConfig = {
-    systemInstruction: systeem,
-    tools: [{ functionDeclarations: [WEEKMENU_TOOL] }],
-    // Ruim genomen: een volledige week is zeven gerechten met hun complete
-    // ingrediëntenlijst, en bij Gemini tellen de denktokens hierin mee.
-    maxOutputTokens: 16000,
-  };
+  const berichten = bouwBerichten(geschiedenis ?? []);
 
   try {
-    const respons = await genai.models.generateContent({
-      model: MODEL,
-      contents,
-      config: basisConfig,
+    const respons = await vraagAi(aiConfig, {
+      systeem,
+      berichten,
+      gereedschap: WEEKMENU_TOOL,
+      // Ruim genomen: een volledige week is zeven gerechten met hun complete
+      // ingrediëntenlijst, en denktokens tellen hierin mee.
+      maxTokens: 16000,
     });
 
-    antwoord = respons.text ?? "";
-
-    const aanroepen = (respons.functionCalls ?? []).filter(
-      (a) => a.name === "werk_weekmenu_bij",
-    );
+    antwoord = respons.tekst;
+    const aanroepen = respons.aanroepen.filter((a) => a.naam === "werk_weekmenu_bij");
 
     for (const aanroep of aanroepen) {
       const gewijzigd = await pasMenuToe(
@@ -198,29 +180,26 @@ export async function POST(request: Request) {
         weekmenu.week_start_date,
         voorkeuren.meals_to_plan,
         userId,
-        (aanroep.args ?? {}) as { gerechten?: ToolGerecht[]; verwijder?: ToolGerecht[] },
+        aanroep.argumenten as { gerechten?: ToolGerecht[]; verwijder?: ToolGerecht[] },
       );
       menuGewijzigd ||= gewijzigd;
     }
 
     // Gemini geeft in één beurt óf een functie-aanroep óf tekst, nooit allebei:
-    // na een menuwijziging staat er dus niets in de chat. We vragen de uitleg in
-    // een tweede beurt op. Het terugspelen van de functieuitkomst met
-    // `functionCallingConfig: NONE` bleek niet te werken — het model riep de
-    // functie dan gewoon opnieuw aan. Zonder tools werkt het wel, dus geven we
-    // het gewoon een samenvatting van wat er is toegepast.
+    // na een menuwijziging staat er dan niets in de chat. Claude doet dit meestal
+    // wél in één beurt, dus we vragen alleen om uitleg als die echt ontbreekt.
     if (aanroepen.length > 0 && antwoord.trim() === "") {
-      const uitleg = await vraagUitleg(genai, {
+      const uitleg = await vraagUitleg(aiConfig, {
         vraag: bericht.trim(),
         gepland: aanroepen.flatMap((a) =>
-          ((a.args?.gerechten ?? []) as ToolGerecht[]).map(
+          ((a.argumenten.gerechten ?? []) as ToolGerecht[]).map(
             (g) =>
               `${g.datum} ${g.maaltijdtype}: ${g.titel} (${g.porties ?? 4} porties` +
               `${g.bereidingstijd_minuten ? `, ${g.bereidingstijd_minuten} min` : ""})`,
           ),
         ),
         verwijderd: aanroepen.flatMap((a) =>
-          ((a.args?.verwijder ?? []) as ToolGerecht[]).map(
+          ((a.argumenten.verwijder ?? []) as ToolGerecht[]).map(
             (s) => `${s.datum} ${s.maaltijdtype} is leeggemaakt`,
           ),
         ),
@@ -229,10 +208,13 @@ export async function POST(request: Request) {
       if (uitleg) antwoord = uitleg;
     }
   } catch (fout) {
-    console.error("Gemini-aanroep mislukt:", fout);
-    const melding =
-      fout instanceof Error && /quota|rate|RESOURCE_EXHAUSTED/i.test(fout.message)
-        ? "De gratis daglimiet van Gemini is bereikt. Probeer het morgen opnieuw."
+    console.error("AI-aanroep mislukt:", fout);
+    const melding = isLimietFout(fout)
+      ? aiConfig.eigenSleutel
+        ? "Je eigen AI-sleutel zit aan zijn limiet of heeft geen tegoed meer."
+        : "De gratis daglimiet is bereikt. Vul bij Instellingen een eigen AI-sleutel in, of probeer het morgen opnieuw."
+      : fout instanceof Error && /sleutel/i.test(fout.message)
+        ? fout.message
         : "De assistent is even niet bereikbaar. Probeer het zo opnieuw.";
     return NextResponse.json({ fout: melding }, { status: 502 });
   }
@@ -269,7 +251,7 @@ export async function POST(request: Request) {
  * wijzigen en gegarandeerd een antwoord in woorden geeft.
  */
 async function vraagUitleg(
-  genai: GoogleGenAI,
+  config: AiConfig,
   input: { vraag: string; gepland: string[]; verwijderd: string[]; gelukt: boolean },
 ): Promise<string | null> {
   if (!input.gelukt) {
@@ -279,28 +261,25 @@ async function vraagUitleg(
   const wijzigingen = [...input.gepland, ...input.verwijderd].join("\n");
 
   try {
-    const respons = await genai.models.generateContent({
-      model: MODEL,
-      contents: [
+    const respons = await vraagAi(config, {
+      systeem:
+        "Je bent Basiel, de kookhulp van een gezin. Je schrijft nuchter Nederlands, geen uitroeptekens, geen verkooppraat.",
+      berichten: [
         {
-          role: "user",
-          parts: [
-            {
-              text: `Je hebt zonet dit in het weekmenu van een gezin gezet:
+          rol: "gebruiker",
+          tekst: `Je hebt zonet dit in het weekmenu gezet:
 
 ${wijzigingen}
 
 De gebruiker vroeg: "${input.vraag}"
 
-Schrijf in twee of drie zinnen wat je gedaan hebt en waarom, in gewone Nederlandse spreektaal. Som het menu niet op — dat staat al in het overzicht naast de chat. Spreek de gebruiker aan met "je". Nuchter en concreet, geen uitroeptekens, geen verkooppraat. Noem alleen dingen die echt in de lijst hierboven staan.`,
-            },
-          ],
+Schrijf in twee of drie zinnen wat je gedaan hebt en waarom. Som het menu niet op — dat staat al in het overzicht naast de chat. Spreek de gebruiker aan met "je". Noem alleen dingen die echt in de lijst hierboven staan.`,
         },
       ],
-      config: { maxOutputTokens: 4000 },
+      maxTokens: 4000,
     });
 
-    return respons.text?.trim() || null;
+    return respons.tekst.trim() || null;
   } catch (fout) {
     // De uitleg is een extraatje: mislukt die, dan is het menu nog steeds bijgewerkt.
     console.error("Uitleg opvragen mislukt:", fout);
@@ -308,25 +287,26 @@ Schrijf in twee of drie zinnen wat je gedaan hebt en waarom, in gewone Nederland
   }
 }
 
-function bouwBerichten(geschiedenis: { role: string; content: string }[]): Content[] {
+function bouwBerichten(
+  geschiedenis: { role: string; content: string }[],
+): { rol: "gebruiker" | "model"; tekst: string }[] {
   // De query levert nieuwste-eerst; draai om en voeg opeenvolgende beurten van
-  // dezelfde rol samen, want de API verwacht afwisselende rollen. Gemini noemt
-  // de assistent-rol "model".
+  // dezelfde rol samen, want beide providers verwachten afwisselende rollen.
   const oplopend = [...geschiedenis].reverse();
-  const berichten: Content[] = [];
+  const berichten: { rol: "gebruiker" | "model"; tekst: string }[] = [];
 
   for (const rij of oplopend) {
-    const rol = rij.role === "assistant" ? "model" : "user";
+    const rol = rij.role === "assistant" ? "model" : "gebruiker";
     const laatste = berichten.at(-1);
-    if (laatste?.role === rol && laatste.parts?.[0]) {
-      laatste.parts[0].text = `${laatste.parts[0].text}\n\n${rij.content}`;
+    if (laatste?.rol === rol) {
+      laatste.tekst = `${laatste.tekst}\n\n${rij.content}`;
     } else {
-      berichten.push({ role: rol, parts: [{ text: rij.content }] });
+      berichten.push({ rol, tekst: rij.content });
     }
   }
 
   // Een gesprek moet met de gebruiker beginnen.
-  while (berichten.length > 0 && berichten[0].role !== "user") berichten.shift();
+  while (berichten.length > 0 && berichten[0].rol !== "gebruiker") berichten.shift();
   return berichten;
 }
 
