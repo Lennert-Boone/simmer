@@ -5,11 +5,18 @@ import { useCallback, useEffect, useState } from "react";
 export default function ReceptStappen({
   entryId,
   beginStappen,
+  beginFotoUrl,
+  beginFotoBron,
 }: {
   entryId: string;
   beginStappen: string[];
+  beginFotoUrl: string | null;
+  beginFotoBron: string | null;
 }) {
   const [stappen, setStappen] = useState(beginStappen);
+  const [foto, setFoto] = useState<{ url: string; bron: string | null } | null>(
+    beginFotoUrl ? { url: beginFotoUrl, bron: beginFotoBron } : null,
+  );
   const [bezig, setBezig] = useState(false);
   const [fout, setFout] = useState<string | null>(null);
   const [afgevinkt, setAfgevinkt] = useState<Set<number>>(new Set());
@@ -27,6 +34,7 @@ export default function ReceptStappen({
         const data = await respons.json();
         if (!respons.ok) throw new Error(data?.fout ?? "Er ging iets mis.");
         setStappen(data.stappen);
+        if (data.fotoUrl) setFoto({ url: data.fotoUrl, bron: data.fotoBron ?? null });
         setAfgevinkt(new Set());
       } catch (probleem) {
         setFout(probleem instanceof Error ? probleem.message : "Er ging iets mis.");
@@ -39,7 +47,8 @@ export default function ReceptStappen({
 
   // Nog geen bereidingswijze opgeslagen? Haal die op zodra de pagina opent.
   useEffect(() => {
-    if (beginStappen.length === 0) void haalOp(false);
+    // Ontbreken de stappen óf de foto, dan één keer ophalen.
+    if (beginStappen.length === 0 || !beginFotoUrl) void haalOp(false);
     // Alleen bij het openen van dit gerecht.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entryId]);
@@ -86,6 +95,23 @@ export default function ReceptStappen({
 
   return (
     <div>
+      {foto && (
+        <figure className="mb-5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={foto.url}
+            alt=""
+            className="aspect-[3/2] w-full rounded-xl border border-lijn object-cover"
+            loading="lazy"
+          />
+          {foto.bron && (
+            <figcaption className="mt-1.5 text-xs text-inkt-zacht">
+              {foto.bron} — ter illustratie, niet jullie gerecht zelf.
+            </figcaption>
+          )}
+        </figure>
+      )}
+
       <ol className="space-y-3">
         {stappen.map((stap, i) => {
           const klaar = afgevinkt.has(i);

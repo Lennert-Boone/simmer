@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { categoriseer } from "@/lib/categorieen";
+import { ontbrekendeMigratie } from "@/lib/supabase/fouten";
 import type { Ingredient } from "@/lib/types";
 
 const normaliseer = (naam: string) => naam.trim().toLowerCase();
@@ -89,15 +91,24 @@ export async function regenereerBoodschappenlijst(
 
   if (teKopen.length === 0) return;
 
-  await supabase.from("shopping_list_items").insert(
-    teKopen.map((regel) => ({
-      family_id: familyId,
-      weekmenu_id: weekmenuId,
-      naam: regel.naam,
-      hoeveelheid: regel.hoeveelheid,
-      eenheid: regel.eenheid,
-      afgevinkt: eerderAfgevinkt.has(normaliseer(regel.naam)),
-      bron: "auto_gegenereerd" as const,
-    })),
-  );
+  const rijen = teKopen.map((regel) => ({
+    family_id: familyId,
+    weekmenu_id: weekmenuId,
+    naam: regel.naam,
+    hoeveelheid: regel.hoeveelheid,
+    eenheid: regel.eenheid,
+    afgevinkt: eerderAfgevinkt.has(normaliseer(regel.naam)),
+    bron: "auto_gegenereerd" as const,
+  }));
+
+  const { error } = await supabase
+    .from("shopping_list_items")
+    .insert(rijen.map((r, i) => ({ ...r, categorie: categoriseer(teKopen[i].naam) })));
+
+  // Draait migratie 005 nog niet, dan bestaat de kolom `categorie` niet. De
+  // lijst zelf is belangrijker dan de indeling, dus dan schrijven we hem
+  // zonder — de app leidt de categorie in dat geval in de weergave af.
+  if (error && ontbrekendeMigratie(error)) {
+    await supabase.from("shopping_list_items").insert(rijen);
+  }
 }

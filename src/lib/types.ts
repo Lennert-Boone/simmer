@@ -52,6 +52,8 @@ export interface Dieetwens {
 
 export interface GezinsVoorkeuren {
   family_id: string;
+  /** Hoeveel weken de boodschappenlijst voorloopt op de bekeken week. */
+  boodschappen_weken_vooruit: number;
   /** 0 = zondag … 6 = zaterdag */
   week_start_day: number;
   meals_to_plan: Maaltijdtype[];
@@ -90,6 +92,8 @@ export interface WeekmenuEntry {
   /** Genummerde stappen; pas gevuld zodra iemand het gerecht openklikt. */
   bereidingswijze: string[];
   recept_bijgewerkt_op: string | null;
+  foto_url: string | null;
+  foto_bron: string | null;
   bron: EntryBron;
 }
 
@@ -104,21 +108,16 @@ export interface ChatBericht {
 export interface BoodschapItem {
   id: string;
   naam: string;
+  categorie: string;
   hoeveelheid: number | null;
   eenheid: string | null;
   afgevinkt: boolean;
   bron: "auto_gegenereerd" | "handmatig";
 }
 
-export const CATEGORIEEN = [
-  "groenten & fruit",
-  "vlees & vis",
-  "zuivel",
-  "droge voorraad",
-  "diepvries",
-  "kruiden & olie",
-  "overig",
-] as const;
+// Voorraad en boodschappen delen één categorielijst — zie lib/categorieen.ts.
+export { CATEGORIEEN } from "@/lib/categorieen";
+export type { Categorie } from "@/lib/categorieen";
 
 export const MAALTIJDTYPES: { waarde: Maaltijdtype; label: string }[] = [
   { waarde: "ontbijt", label: "Ontbijt" },

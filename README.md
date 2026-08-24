@@ -53,8 +53,9 @@ Vul in:
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Settings → API |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Settings → API |
-| `GEMINI_API_KEY` | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — gratis |
+| `GEMINI_API_KEY` | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — gratis; gedeelde terugval |
 | `GEMINI_MODEL` | optioneel; standaard `gemini-3.6-flash` |
+| `PEXELS_API_KEY` | optioneel; [pexels.com/api](https://www.pexels.com/api) — foto's bij gerechten |
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` lokaal |
 
 ### 3. Draaien
@@ -117,6 +118,36 @@ Zie [`DEPLOY.md`](DEPLOY.md) — Vercel plus één DNS-record bij GoDaddy.
 | `src/components/Navigatie.tsx` | Onderbalk op mobiel, inklapbare zijbalk vanaf tablet |
 | `src/components/ChatBubble.tsx` | Basiel als zwevend bolletje met chatpaneel |
 | `src/app/api/recept/route.ts` | Bereidingsstappen genereren voor één gerecht |
+
+### Snelheid
+
+`getGezinsContext()` zit in React's `cache()`. Zonder die deduplicatie riepen de
+layout én de pagina dezelfde vijf Supabase-queries aan — tien sequentiële round-trips per
+navigatie. Profiel en voorkeuren worden binnen die functie parallel opgehaald. Elke route heeft
+een `loading.tsx` met het pruttelende potje, zodat er meteen iets staat terwijl de server werkt.
+
+### Welke AI, en waarom je Claude Pro niet kunt koppelen
+
+`src/lib/ai/` is de providerlaag. Een gezin kiest in Instellingen tussen Google Gemini en
+Anthropic Claude, kiest een model, en kan een **eigen API-sleutel** invullen. Zonder eigen sleutel
+draait alles op de gedeelde `GEMINI_API_KEY` met de gratis daglimiet.
+
+**Inloggen met een Claude Pro-abonnement kan niet** — en dat is geen ontbrekende feature. Claude
+Pro is een abonnement op claude.ai en Claude Code; er bestaat geen OAuth waarmee een externe
+webapp namens jou op dat abonnement mag draaien. De API is een aparte, per-verbruik afgerekende
+toegang met een eigen sleutel. Dat is dus wat de app aanbiedt.
+
+De sleutel staat in `family_ai_config`, met een RLS-policy die alleen de beheerder van het gezin
+toelaat. Andere leden zien hem nooit — ze merken alleen dat de chat werkt. De sleutel gaat nooit
+naar de browser: het formulier toont hoogstens dát er één staat.
+
+### Foto bij het gerecht
+
+`src/lib/fotos.ts` haalt een foto uit Pexels op basis van de gerechtnaam, één keer per gerecht,
+op het moment dat je het openklikt. Bewust géén AI-beeldgeneratie: die modellen stáán op de
+Gemini-sleutel, maar hun gratis quota is meteen op — een testaanroep gaf direct
+`RESOURCE_EXHAUSTED`. Eén foto zou je hele dagbudget opsouperen dat je liever aan het weekmenu
+besteedt. De match is bij benadering; dat staat ook onder de foto.
 
 ### De AI-aanroep
 
@@ -182,6 +213,12 @@ navigatie — dat bereik je via je profielfoto.
 `next/og`) en `src/app/manifest.ts`. Een witte pot met saffraan stoom op kruidengroen. Let op: de
 metadata-routes staan in de matcher-uitzondering van `src/proxy.ts`, anders stuurt de auth-check
 ze naar de loginpagina.
+
+**Boodschappenlijst** loopt standaard één week voor op de huidige week — wie zaterdag winkelt,
+doet dat voor de week erna. Instelbaar van 0 tot 2 weken. De lijst is gegroepeerd per categorie in
+winkelvolgorde; `src/lib/categorieen.ts` doet dat met een Nederlandse woordenlijst en niet met een
+AI-aanroep — het moet instant zijn en mag geen quota kosten. Meervouden worden herkend, dus
+"aardappel" dekt ook "aardappelen".
 
 **Meldingen** komen uit de tabel `activiteit`: een logboek per gezin van menuwijzigingen door
 Basiel, verwijderde gerechten, bevestigde menu's en leden die komen of gaan. Ongelezen wordt

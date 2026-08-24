@@ -134,7 +134,22 @@
   }
 }
 
-/* Motion blijft beperkt tot de vandaag-kaart en binnenkomende AI-antwoorden. */
+/* De stoom boven het potje in het laadscherm. */
+@keyframes pruttel {
+  0%, 100% { opacity: 0.35; transform: translateY(1px); }
+  50%      { opacity: 1;    transform: translateY(-2px); }
+}
+
+.stoom {
+  animation: pruttel 1.6s ease-in-out infinite;
+  transform-origin: center;
+}
+.stoom-traag {
+  animation-delay: 0.4s;
+}
+
+/* Motion blijft beperkt tot de vandaag-kaart, het laadscherm en binnenkomende
+   AI-antwoorden. */
 @keyframes opkomen {
   from {
     opacity: 0;

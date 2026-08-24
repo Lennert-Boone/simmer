@@ -7,6 +7,8 @@ import { getGezinsContext } from "@/lib/family";
 import { regenereerBoodschappenlijst } from "@/lib/shopping";
 import { logActiviteit } from "@/lib/activiteit";
 import { dagLabel, weekLabel } from "@/lib/week";
+import { isGeldigModel, STANDAARD, type Provider } from "@/lib/ai";
+import { migratieMelding } from "@/lib/supabase/fouten";
 import type { Dieetwens, Maaltijdtype } from "@/lib/types";
 
 /** Leest de verborgen `week`-parameter die de formulieren meesturen. */
@@ -75,6 +77,10 @@ export async function slaVoorkeurenOp(_vorigeStaat: unknown, formData: FormData)
       week_start_day: Number(formData.get("week_start_day") ?? 0),
       meals_to_plan: maaltijden.length > 0 ? maaltijden : ["avond"],
       kookstijl_notities: String(formData.get("kookstijl") ?? "").trim(),
+      boodschappen_weken_vooruit: Math.min(
+        4,
+        Math.max(0, Number(formData.get("boodschappen_weken_vooruit") ?? 1)),
+      ),
       dieetwensen,
       updated_at: new Date().toISOString(),
     },
@@ -185,6 +191,67 @@ export async function herbouwBoodschappenlijst(formData: FormData) {
   await regenereerBoodschappenlijst(supabase, context.gezin.id, context.weekmenu.id);
 
   revalidatePath("/boodschappen");
+}
+
+/**
+ * Slaat de AI-keuze van het gezin op. Alleen de beheerder mag dit — de
+ * RLS-policy op family_ai_config dwingt dat ook af, deze check geeft er alleen
+ * een leesbare melding bij.
+ */
+export async function slaAiConfigOp(_vorigeStaat: unknown, formData: FormData) {
+  const context = await getGezinsContext();
+  if (!context) redirect("/onboarding");
+  if (context.rol !== "owner") {
+    return { fout: "Alleen de beheerder van het gezin kan dit aanpassen." };
+  }
+
+  const provider = (formData.get("provider") === "anthropic" ? "anthropic" : "gemini") as Provider;
+  const gekozenModel = String(formData.get("model") ?? "");
+  const model = isGeldigModel(provider, gekozenModel) ? gekozenModel : STANDAARD[provider];
+  const nieuweSleutel = String(formData.get("api_key") ?? "").trim();
+  const verwijderen = formData.get("verwijder_sleutel") === "ja";
+
+  const supabase = await createClient();
+
+  // Geen sleutel meegestuurd? Dan blijft de bestaande staan — het formulier
+  // toont hem nooit, dus een leeg veld mag nooit "wissen" betekenen.
+  const wijziging: Record<string, unknown> = {
+    family_id: context.gezin.id,
+    provider,
+    model,
+    updated_at: new Date().toISOString(),
+    updated_by: context.userId,
+  };
+  if (verwijderen) wijziging.api_key = null;
+  else if (nieuweSleutel) wijziging.api_key = nieuweSleutel;
+
+  const { error } = await supabase
+    .from("family_ai_config")
+    .upsert(wijziging, { onConflict: "family_id" });
+
+  if (error) return { fout: migratieMelding(error, "migratie 005") };
+
+  if (provider === "anthropic" && !nieuweSleutel && !verwijderen) {
+    // Vriendelijke waarschuwing: Claude werkt niet zonder eigen sleutel.
+    const { data } = await supabase
+      .from("family_ai_config")
+      .select("api_key")
+      .eq("family_id", context.gezin.id)
+      .maybeSingle();
+    if (!data?.api_key) {
+      return { fout: "Claude heeft een eigen API-sleutel nodig. Vul er een in om verder te kunnen." };
+    }
+  }
+
+  await logActiviteit(supabase, {
+    familyId: context.gezin.id,
+    actorId: context.userId,
+    soort: "voorkeuren_gewijzigd",
+    omschrijving: `${context.profiel.naam || "De beheerder"} paste de AI-instellingen aan.`,
+  });
+
+  revalidatePath("/instellingen");
+  return { gelukt: "Opgeslagen." };
 }
 
 export async function logUit() {

@@ -91,7 +91,12 @@ export default async function GerechtPagina({ params }: { params: Promise<{ id: 
           <h2 className="cijfer mb-3 text-xs uppercase tracking-widest text-inkt-zacht">
             Bereiding
           </h2>
-          <ReceptStappen entryId={entry.id} beginStappen={entry.bereidingswijze ?? []} />
+          <ReceptStappen
+            entryId={entry.id}
+            beginStappen={entry.bereidingswijze ?? []}
+            beginFotoUrl={entry.foto_url ?? null}
+            beginFotoBron={entry.foto_bron ?? null}
+          />
         </section>
       </div>
 
